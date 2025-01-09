@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<style>
+  #show-box{
+    padding: 10px;
+    margin-top: 20px;
+  }
+  ul li{
+    list-style: none;
+  }
+
+</style>
+<body>
+  <input type="file" id="file-input" />  
+  <input type="text" name="" id="input-name" placeholder="请输入名字" value="马华  + 夏智宾 + 程晓洪">
+  <button id="dir">确定</button>
+  <div id="show-box">
+    <span id="count"></span>
+    <div id="list"></div>
+  </div>
+</body>
+</html>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js"></script>
+<script>
+  let parsedData = []; // 存储解析后的数据  
+  let nameArr = []; //输入框数据
+  document.getElementById('file-input').addEventListener('change', function(e) {  
+    const file = e.target.files[0];  
+    const reader = new FileReader();  
+      
+    reader.onload = function(e) {  
+      const data = new Uint8Array(e.target.result);  
+      const workbook = XLSX.read(data, {type: 'array'});  
+        
+      // 只处理第一个工作表  
+      const firstSheetName = workbook.SheetNames[0];  
+      const worksheet = workbook.Sheets[firstSheetName];  
+        
+      // 将工作表的数据转换成JSON  
+      parsedData = XLSX.utils.sheet_to_json(worksheet, {header: 1});  
+      // console.log(parsedData);  
+    };
+
+    reader.onerror = function() {  
+        console.error('文件读取失败');  
+    }; 
+    reader.readAsArrayBuffer(file);
+  });  
+  let btn = document.getElementById('dir')
+
+btn.addEventListener('click',function(){
+    if(!parsedData.length){
+      alert('请上传文件')
+      return
+    }else{
+      result()
+    }  
+function result() {
+   document.getElementById('list').innerHTML = ""
+   let text =  document.getElementById('input-name').value.replace(/\s+/g, '')
+   nameArr = text.split("+")
+   list = parsedData.filter((item,index)=>{
+       return nameArr.includes(item[15]);
+      }).reduce((acc, item) => {   
+      // 创建一个用于组合的键
+      let key = `${item[2]}-${item[3]}`;  
+      // 如果这个组合已经在累加器中，则增加其计数 
+      if (acc[key]) { 
+      acc[key]++;  
+      } else {  
+      // 如果不在累加器中，则初始化计数为1 
+      acc[key]=1
+      }    
+      return acc;  
+      }, {}); // 初始累加器是一个空对象 
+   let sum = 0 //初始化总数
+   //遍历创建标签，计算总数
+   for (const key in list) {
+    sum += list[key]
+    let p = document.createElement('p')
+    p.textContent = `${key} ${list[key]}份`
+    document.getElementById('list').appendChild(p)
+   }
+   document.getElementById('count').innerText = `总数:${sum}` 
+    }
+
+  })
+</script>
