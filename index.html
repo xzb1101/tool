@@ -1,94 +1,212 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"></html>
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>项目统计分析</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .upload-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #result {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stat-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+        .stat-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .total-count {
+            margin-top: 15px;
+            font-weight: bold;
+            color: #666;
+        }
+        #copyBtn {
+            margin-top: 15px;
+            background: #2196F3;
+        }
+        
+    </style>
 </head>
-<style>
-  #show-box{
-    padding: 10px;
-    margin-top: 20px;
-  }
-  ul li{
-    list-style: none;
-  }
-
-</style>
 <body>
-  <input type="file" id="file-input" />  
-  <input type="text" name="" id="input-name" placeholder="请输入名字" value="马华  + 夏智宾 + 程晓洪">
-  <button id="dir">确定</button>
-  <div id="show-box">
-    <span id="count"></span>
-    <div id="list"></div>
-  </div>
-  <a href="./gaosuosuo.html">跳转</a>
+    <div class="upload-section">
+        <input type="file" id="fileInput" accept=".xls,.xlsx">
+        <button onclick="processFile()">解析文件</button>
+        <button id="copyBtn" onclick="copyResults()" style="display: none;">复制全部结果</button>
+        <button id="exportBtn" onclick="exportResults()" style="display: none;">导出为XLS文件</button>
+    </div>
+    <div id="result"></div>
+
+    <script>
+        function processFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('请先选择文件');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+                // 动态获取列索引
+                const headers = jsonData[0].map(h => h.trim().toLowerCase());
+                const projectIndex = headers.findIndex(h => h.includes('项目名称'));
+                const techIndex = headers.findIndex(h => h.includes('技术方向'));
+
+                if (projectIndex === -1 || techIndex === -1) {
+                    alert("未找到'项目名称'或'技术方向'列");
+                    return;
+                }
+
+                // 统计逻辑
+                const counts = {};
+                let total = 0;
+                jsonData.slice(1).forEach(row => {
+                    const project = row[projectIndex];
+                    const tech = row[techIndex];
+                    if (project && tech) {
+                        const key = `${project}-${tech}`;
+                        counts[key] = (counts[key] || 0) + 1;
+                        total++;
+                    }
+                });
+
+                // 渲染结果
+                const resultDiv = document.getElementById('result');
+                let html = '<ul class="stat-list">';
+                for (const [key, count] of Object.entries(counts)) {
+                    html += `<li class="stat-item">${key} - ${count}份</li>`;
+                }
+                html += '</ul>';
+                html += `<div class="total-count">总份数: ${total}份</div>`;
+                resultDiv.innerHTML = html;
+
+                // 显示复制按钮
+                document.getElementById('copyBtn').style.display = 'inline-block';
+                document.getElementById('exportBtn').style.display = 'inline-block';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function exportResults() {
+            // 准备数据
+            const items = Array.from(document.querySelectorAll('.stat-item'))
+                .map(li => li.textContent.split(' - '));
+ 
+            // 创建工作簿和工作表
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet([['项目名称-技术方向', '份数'], ...items.map(([key, count]) => [key, count.replace('份', '')])]);
+            XLSX.utils.book_append_sheet(wb, ws, "统计结果");
+ 
+            // 生成Excel文件并触发下载
+            XLSX.writeFile(wb, "统计结果.xlsx");
+        }
+        
+        function copyResults() {
+            try {
+                const items = Array.from(document.querySelectorAll('.stat-item'))
+                    .map(li => {
+                        const text = li.textContent;
+                        return text; // 处理中英文破折号
+                    });
+                
+                const total = document.querySelector('.total-count')?.textContent || '总份数: 0份';
+                
+                // 复制内容
+                const content = [...items].join('\n');
+                
+                // 使用现代剪贴板API
+                navigator.clipboard.writeText(content)
+                    .then(() => {
+                        showToast('✅ 复制成功！');
+                    })
+                    .catch((err) => {
+                        console.error('复制失败:', err);
+                        // legacyCopy(content); // 降级方案
+                    });
+                
+            } catch (error) {
+                alert('复制功能异常，请手动选择文本后按Ctrl+C');
+                console.error('复制错误:', error);
+            }
+        }
+
+        // 降级复制方案
+        function legacyCopy(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                showToast('✅ 已复制到剪贴板');
+            } catch (err) {
+                alert('请手动选择文本后按Ctrl+C复制');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        }
+
+        // 显示操作反馈
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.style = `
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0,0,0,0.8);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 4px;
+                animation: fade 2s;
+            `;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 2000);
+        }
+    </script>
 </body>
 </html>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js"></script>
-<script>
-  let parsedData = []; // 存储解析后的数据  
-  let nameArr = []; //输入框数据
-  document.getElementById('file-input').addEventListener('change', function(e) {  
-    const file = e.target.files[0];  
-    const reader = new FileReader();  
-      
-    reader.onload = function(e) {  
-      const data = new Uint8Array(e.target.result);  
-      const workbook = XLSX.read(data, {type: 'array'});  
-        
-      // 只处理第一个工作表  
-      const firstSheetName = workbook.SheetNames[0];  
-      const worksheet = workbook.Sheets[firstSheetName];  
-        
-      // 将工作表的数据转换成JSON  
-      parsedData = XLSX.utils.sheet_to_json(worksheet, {header: 1});  
-      // console.log(parsedData);  
-    };
-
-    reader.onerror = function() {  
-        console.error('文件读取失败');  
-    }; 
-    reader.readAsArrayBuffer(file);
-  });  
-  let btn = document.getElementById('dir')
-
-btn.addEventListener('click',function(){
-    if(!parsedData.length){
-      alert('请上传文件')
-      return
-    }else{
-      result()
-    }  
-function result() {
-   document.getElementById('list').innerHTML = ""
-   let text =  document.getElementById('input-name').value.replace(/\s+/g, '')
-   nameArr = text.split("+")
-   list = parsedData.filter((item,index)=>{
-       return nameArr.includes(item[15]);
-      }).reduce((acc, item) => {   
-      // 创建一个用于组合的键
-      let key = `${item[2]}-${item[3]}`;  
-      // 如果这个组合已经在累加器中，则增加其计数 
-      if (acc[key]) { 
-      acc[key]++;  
-      } else {  
-      // 如果不在累加器中，则初始化计数为1 
-      acc[key]=1
-      }    
-      return acc;  
-      }, {}); // 初始累加器是一个空对象 
-   let sum = 0 //初始化总数
-   //遍历创建标签，计算总数
-   for (const key in list) {
-    sum += list[key]
-    let p = document.createElement('p')
-    p.textContent = `${key} ${list[key]}份`
-    document.getElementById('list').appendChild(p)
-   }
-   document.getElementById('count').innerText = `总数:${sum}` 
-    }
-
-  })
-</script>
