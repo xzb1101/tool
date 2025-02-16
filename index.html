@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"></html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -57,79 +56,160 @@
             margin-top: 15px;
             background: #2196F3;
         }
-        
+        .filter-section {
+            margin: 15px 0;
+        }
+        .filter-section input {
+            padding: 8px;
+            width: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .filter-hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="upload-section">
         <input type="file" id="fileInput" accept=".xls,.xlsx">
-        <button onclick="processFile()">解析文件</button>
-        <button id="copyBtn" onclick="copyResults()" style="display: none;">复制全部结果</button>
+        <div class="filter-section">
+            <input type="text" id="nameFilter" 
+                   placeholder="输入姓名筛选（多个姓名用英文逗号分隔）">
+            <div class="filter-hint">示例：张三,李四,王五（精确匹配）</div>
+        </div>
+        <button onclick="processFile()" id="parseBtn">解析文件</button>
+        <button id="copyBtn" onclick="copyResults()" style="display: none;">复制结果</button>
         <button id="exportBtn" onclick="exportResults()" style="display: none;">导出为XLS文件</button>
     </div>
+
     <div id="result"></div>
 
     <script>
-        function processFile() {
-            const fileInput = document.getElementById('fileInput');
-            const file = fileInput.files[0];
-            if (!file) {
-                alert('请先选择文件');
-                return;
-            }
+        let currentData = [];
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+async function processFile() {
+    const fileInput = document.getElementById('fileInput');
+    const parseBtn = document.getElementById('parseBtn');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('请先选择文件');
+        return;
+    }
 
-                // 动态获取列索引
-                const headers = jsonData[0].map(h => h.trim().toLowerCase());
-                const projectIndex = headers.findIndex(h => h.includes('项目名称'));
-                const techIndex = headers.findIndex(h => h.includes('技术方向'));
+    // 禁用按钮防止重复点击
+    parseBtn.disabled = true;
+    parseBtn.textContent = '解析中...';
 
-                if (projectIndex === -1 || techIndex === -1) {
-                    alert("未找到'项目名称'或'技术方向'列");
-                    return;
-                }
+    try {
+        // 读取文件
+        const data = await readFile(file);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
 
-                // 统计逻辑
-                const counts = {};
-                let total = 0;
-                jsonData.slice(1).forEach(row => {
-                    const project = row[projectIndex];
-                    const tech = row[techIndex];
-                    if (project && tech) {
-                        const key = `${project}-${tech}`;
-                        counts[key] = (counts[key] || 0) + 1;
-                        total++;
-                    }
-                });
+        // 动态获取列索引
+        const headers = jsonData[0].map(h => h.trim().toLowerCase());
+        const projectIndex = headers.findIndex(h => h.includes('项目名称'));
+        const techIndex = headers.findIndex(h => h.includes('技术方向'));
+        const recommenderIndex = headers.findIndex(h => h.includes('推荐人'));
 
-                // 渲染结果
-                const resultDiv = document.getElementById('result');
-                let html = '<ul class="stat-list">';
-                for (const [key, count] of Object.entries(counts)) {
-                    html += `<li class="stat-item">${key} - ${count}份</li>`;
-                }
-                html += '</ul>';
-                html += `<div class="total-count">总份数: ${total}份</div>`;
-                resultDiv.innerHTML = html;
+        // 验证必要列
+        if ([projectIndex, techIndex, recommenderIndex].includes(-1)) {
+            throw new Error("缺少必要列：项目名称、技术方向、推荐人");
+        }
 
-                // 显示复制按钮
-                document.getElementById('copyBtn').style.display = 'inline-block';
-                document.getElementById('exportBtn').style.display = 'inline-block';
-            };
-            reader.readAsArrayBuffer(file);
+        // 获取筛选条件
+        const filterNames = document.getElementById('nameFilter').value
+            .split(',')
+            .map(name => name.trim())
+            .filter(name => name);
+
+        // 处理数据
+        currentData = jsonData.slice(1)
+            .map(row => ({
+                project: row[projectIndex] || '未命名项目',
+                tech: row[techIndex] || '未指定方向',
+                recommender: (row[recommenderIndex] || '').trim()
+            }))
+            .filter(item => {
+                return filterNames.length === 0 || filterNames.includes(item.recommender);
+            });
+
+        // 渲染结果
+        renderResults();
+        document.getElementById('copyBtn').style.display = 'inline-block';
+
+    } catch (error) {
+        alert(`解析失败：${error.message}`);
+    } finally {
+        parseBtn.disabled = false;
+        parseBtn.textContent = '解析文件';
+    }
+}
+
+function readFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(new Uint8Array(e.target.result));
+        reader.onerror = () => reject(new Error('文件读取失败'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function renderResults() {
+    const counts = currentData.reduce((acc, item) => {
+        const key = `${item.project}-${item.tech}`;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+    }, {});
+
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = `
+        <ul class="stat-list">
+            ${Object.entries(counts).map(([key, count]) => `
+                <li class="stat-item">${key} - ${count}份</li>
+            `).join('')}
+        </ul>
+        <div class="total-count">
+            总份数: ${currentData.length}份
+            ${document.getElementById('nameFilter').value ? 
+            `（筛选条件：${document.getElementById('nameFilter').value}）` : ''}
+        </div>
+    `;
+}
+        function renderResults() {
+            const counts = currentData.reduce((acc, item) => {
+                const key = `${item.project}-${item.tech}`;
+                acc[key] = (acc[key] || 0) + 1;
+                return acc;
+            }, {});
+
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `
+                <ul class="stat-list">
+                    ${Object.entries(counts).map(([key, count]) => `
+                        <li class="stat-item">${key} ${count}份</li>
+                    `).join('')}
+                </ul>
+                <div class="total-count">
+                    总份数: ${currentData.length}份
+                    ${document.getElementById('nameFilter').value ? 
+                    `（筛选条件：${document.getElementById('nameFilter').value}）` : ''}
+                </div>
+            `;
+            // 显示复制按钮
+            document.getElementById('copyBtn').style.display = 'inline-block';
+            document.getElementById('exportBtn').style.display = 'inline-block';
         }
 
         function exportResults() {
             // 准备数据
             const items = Array.from(document.querySelectorAll('.stat-item'))
-                .map(li => li.textContent.split(' - '));
- 
+                .map(li => li.textContent.split(' '));
             // 创建工作簿和工作表
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.aoa_to_sheet([['项目名称-技术方向', '份数'], ...items.map(([key, count]) => [key, count.replace('份', '')])]);
